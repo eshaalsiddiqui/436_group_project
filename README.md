@@ -20,14 +20,6 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Download the [UCI Online Retail dataset](https://archive.ics.uci.edu/dataset/352/online+retail)
-and place `Online Retail.xlsx` in `data/raw/`:
-
-```bash
-curl -L -o data/raw/online_retail.zip "https://archive.ics.uci.edu/static/public/352/online+retail.zip"
-unzip -d data/raw data/raw/online_retail.zip
-```
-
 ## Build the data and train the model
 
 ```bash
