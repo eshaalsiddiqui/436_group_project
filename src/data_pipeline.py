@@ -51,13 +51,17 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
     """Apply the cleaning rules from the project spec.
 
     Drops cancelled invoices (InvoiceNo starting with 'C'), rows with missing
-    StockCode/Description, and rows with non-positive UnitPrice (data errors).
-    Negative quantities (returns) are dropped from the demand target but
-    preserved in a `weekly_returns` count via the `is_return` flag.
+    StockCode/Description, rows with non-positive UnitPrice (data errors), and
+    non-product StockCodes that don't start with a digit (e.g. POST, DOT, M,
+    D, C2, S, BANK CHARGES, AMAZONFEE - postage, discounts, carriage, manual
+    adjustments, and fees rather than sellable inventory). Negative quantities
+    (returns) are dropped from the demand target but preserved in a
+    `weekly_returns` count via the `is_return` flag.
     """
     df = df.dropna(subset=["StockCode", "Description"]).copy()
     df["InvoiceNo"] = df["InvoiceNo"].astype(str)
     df["StockCode"] = df["StockCode"].astype(str)
+    df = df[df["StockCode"].str[0].str.isdigit()]
     # Flag returns before dropping cancelled invoices: in this dataset returns
     # are recorded as negative quantities on "C" invoices, so the flag must be
     # computed first or the returns count comes out empty.
