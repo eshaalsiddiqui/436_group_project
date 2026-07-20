@@ -54,10 +54,17 @@ def predict_with_uncertainty(model, X: pd.DataFrame, log_target: bool = True) ->
     The production model is trained on log1p(units) to handle the heavy skew
     in weekly demand; with `log_target=True` each tree's prediction is mapped
     back through expm1 first, so both mean and std are in units.
+
+    Per-tree predictions are floored at 0 units before aggregating: demand
+    can never be negative, and this is the one place every caller (training
+    evaluation and app inference alike) goes through, so it's the right spot
+    to make that floor an explicit guarantee rather than an incidental
+    consequence of how the model happens to be trained.
     """
     per_tree = np.stack([est.predict(X.values) for est in model.estimators_])
     if log_target:
         per_tree = np.expm1(per_tree)
+    per_tree = np.clip(per_tree, 0, None)
     return per_tree.mean(axis=0), per_tree.std(axis=0)
 
 
@@ -119,7 +126,6 @@ def forecast_inventory(bundle: dict, features: pd.DataFrame, stock_codes: list,
             })
         X = pd.DataFrame(batch)[FEATURE_COLS]
         mean, std = predict_with_uncertainty(model, X, log_target=bundle.get("log_target", True))
-        mean = np.clip(mean, 0, None)
         for code, m, sd in zip(codes, mean, std):
             rows.append({"StockCode": code, "week_start": week, "horizon": h,
                          "forecast": float(m), "forecast_std": float(sd)})

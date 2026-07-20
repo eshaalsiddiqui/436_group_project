@@ -106,7 +106,6 @@ def main():
     model.fit(train[FEATURE_COLS], np.log1p(train["units_sold"]))
 
     pred_mean, pred_std = predict_with_uncertainty(model, test[FEATURE_COLS], log_target=True)
-    pred_mean = np.clip(pred_mean, 0, None)
     mae = mean_absolute_error(test["units_sold"], pred_mean)
     stockout_rate = simulate_stockout_rate(test, pred_mean, pred_std)
 
