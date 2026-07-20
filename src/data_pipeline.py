@@ -58,6 +58,7 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna(subset=["StockCode", "Description"]).copy()
     df["InvoiceNo"] = df["InvoiceNo"].astype(str)
     df["StockCode"] = df["StockCode"].astype(str)
+    df = df[df["StockCode"].str.upper() != "M"]
     # Flag returns before dropping cancelled invoices: in this dataset returns
     # are recorded as negative quantities on "C" invoices, so the flag must be
     # computed first or the returns count comes out empty.

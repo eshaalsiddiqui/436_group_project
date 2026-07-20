@@ -122,10 +122,9 @@ if editor_key not in st.session_state:
         "StockCode": inventory,
         "product": [str(names.get(c, c))[:30] for c in inventory],
         "current_stock": [seed_stock[c] for c in inventory],
-        "lead_time_days": [default_lead_time] * len(inventory),
     })
 
-with st.sidebar.expander("Current stock & lead time per product"):
+with st.sidebar.expander("Current stock per product"):
     st.caption("Demo stock counts are pre-filled - edit them to match your shelves.")
     edited = st.data_editor(
         st.session_state[editor_key],
@@ -133,13 +132,12 @@ with st.sidebar.expander("Current stock & lead time per product"):
             "StockCode": st.column_config.TextColumn(disabled=True),
             "product": st.column_config.TextColumn(disabled=True),
             "current_stock": st.column_config.NumberColumn(min_value=0, step=1),
-            "lead_time_days": st.column_config.NumberColumn(min_value=1, max_value=60, step=1),
         },
         hide_index=True, key=f"editor_widget_{inventory_size}")
     st.session_state[editor_key] = edited
 
 stock_levels = dict(zip(edited["StockCode"], edited["current_stock"]))
-lead_times = dict(zip(edited["StockCode"], edited["lead_time_days"]))
+lead_times = {code: default_lead_time for code in inventory}
 
 # Cheap pure-math pass over the cached forecasts (no model inference).
 recs = build_recommendations(
@@ -179,7 +177,10 @@ with col1:
     fig = go.Figure(go.Bar(
         x=[f"Week +{h}" for h in sel_fc["horizon"]],
         y=sel_fc["forecast"] * uplift,
-        error_y=dict(type="data", array=sel_fc["forecast_std"], color=C_MUTED, thickness=1.5),
+        error_y=dict(type="data",
+             array=sel_fc["forecast_std"],
+             arrayminus=np.minimum(sel_fc["forecast_std"], sel_fc["forecast"] * uplift),
+             color=C_MUTED, thickness=1.5),
         marker_color=C_SERIES, width=0.55,
         hovertemplate="%{x}: %{y:.0f} units (±%{error_y.array:.0f})<extra></extra>"))
     fig.update_layout(
@@ -189,8 +190,9 @@ with col1:
                    tickfont=dict(color=C_MUTED)),
         xaxis=dict(tickfont=dict(color=C_MUTED)))
     st.plotly_chart(fig)
-    st.caption("Error bars: ±1 std dev across the forest's individual trees"
-               + (" · uplift applied" if promotion else ""))
+    st.caption("Error bars: ±1 std dev across the forest's trees, floored at zero "
+           "(demand cannot be negative)"
+           + (" · uplift applied" if promotion else ""))
 
 # --------------------------------------------------------------------------
 # Main panel, middle: stock depletion vs reorder point
