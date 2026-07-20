@@ -246,16 +246,34 @@ else:
 st.subheader("Reorder plans")
 st.caption("All plans share one forecast run - switching tabs only re-sorts the same table.")
 
-TABLE_COLS = {
+BASE_COLS = {
     "StockCode": st.column_config.TextColumn("SKU"),
     "description": st.column_config.TextColumn("Product", width="medium"),
     "current_stock": st.column_config.NumberColumn("Stock", format="%d"),
     "reorder_point": st.column_config.NumberColumn("Reorder pt", format="%.0f"),
     "days_until_stockout": st.column_config.NumberColumn("Days to stockout", format="%.1f"),
     "recommended_order_qty": st.column_config.NumberColumn("Order qty", format="%d"),
-    "weekly_revenue_at_risk": st.column_config.NumberColumn("Weekly £ at risk", format="£%.0f"),
+    "weekly_revenue_at_risk": st.column_config.NumberColumn("Revenue at risk (weekly)", format="£%.0f"),
     "cv": st.column_config.NumberColumn("Demand CV", format="%.2f"),
-    "flagged_by": st.column_config.TextColumn("Top-10 in plan(s)", width="medium"),
+    "urgency": st.column_config.TextColumn("Urgency"),
+    "confidence": st.column_config.TextColumn("Confidence"),
+    "flagged_by": st.column_config.TextColumn("Also top-10 in", width="medium"),
+}
+
+# Each plan leads with the column it actually sorts by, emphasized: urgency
+# tier (color-coded relative to lead time) for stockout urgency, a revenue
+# bar for revenue protection (the sort key is derived, not a raw column, so
+# it's surfaced explicitly rather than left for the owner to infer), and a
+# confidence tier for forecast certainty.
+PLAN_COLUMNS = {
+    "stockout_urgency": ["StockCode", "description", "urgency", "days_until_stockout",
+                         "current_stock", "reorder_point", "recommended_order_qty", "flagged_by"],
+    "revenue_protection": ["StockCode", "description", "weekly_revenue_at_risk",
+                           "recommended_order_qty", "current_stock", "reorder_point",
+                           "days_until_stockout", "flagged_by"],
+    "forecast_certainty": ["StockCode", "description", "confidence", "cv",
+                           "days_until_stockout", "current_stock", "reorder_point",
+                           "recommended_order_qty", "flagged_by"],
 }
 
 tabs = st.tabs(list(PLAN_NAMES.values()))
@@ -265,8 +283,13 @@ for tab, plan_key in zip(tabs, PLAN_NAMES):
         if view.empty:
             st.info("No products are flagged for reorder under the current settings.")
             continue
-        st.dataframe(view[list(TABLE_COLS)], column_config=TABLE_COLS,
-                     hide_index=True, width="stretch")
+        cols = PLAN_COLUMNS[plan_key]
+        col_config = dict(BASE_COLS)
+        if plan_key == "revenue_protection":
+            col_config["weekly_revenue_at_risk"] = st.column_config.ProgressColumn(
+                "Revenue at risk (weekly)", format="£%.0f", min_value=0.0,
+                max_value=float(view["weekly_revenue_at_risk"].max()))
+        st.dataframe(view[cols], column_config=col_config, hide_index=True, width="stretch")
 
 with st.expander("Products not flagged (runway remaining)"):
     watch = recs[recs["decision"] == "dont_order"].sort_values("days_until_reorder_point")
@@ -276,7 +299,7 @@ with st.expander("Products not flagged (runway remaining)"):
         column_config={
             "days_until_reorder_point": st.column_config.NumberColumn(
                 "Days until reorder point", format="%.1f"),
-            **{k: v for k, v in TABLE_COLS.items() if k in
+            **{k: v for k, v in BASE_COLS.items() if k in
                ("StockCode", "description", "current_stock", "reorder_point",
                 "days_until_stockout")},
         },

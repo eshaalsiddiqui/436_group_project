@@ -18,6 +18,36 @@ PLAN_NAMES = {
     "forecast_certainty": "Forecast certainty",
 }
 
+# CV tertile cutoffs from the full weekly feature table (25%/50%/75% are
+# ~0.83/1.28/1.95): High confidence forecasts vary less week to week than
+# the median product, Low confidence forecasts vary substantially more.
+CV_HIGH_CONFIDENCE_MAX = 1.0
+CV_MEDIUM_CONFIDENCE_MAX = 1.75
+
+
+def urgency_tier(days_until_stockout: float, lead_time_days: float) -> str:
+    """Stockout urgency relative to how long a reorder takes to arrive.
+
+    Critical: stock runs out before a reorder placed today would arrive.
+    Soon: survives the lead time, but with less than one more lead time of
+    margin. Monitor: comfortable margin even accounting for the lead time.
+    """
+    if days_until_stockout <= lead_time_days:
+        return "\U0001F534 Critical"
+    if days_until_stockout <= 2 * lead_time_days:
+        return "\U0001F7E1 Soon"
+    return "\U0001F7E2 Monitor"
+
+
+def confidence_tier(cv: float) -> str:
+    """Forecast confidence label from the trailing demand coefficient of
+    variation - low CV means a stable, trustworthy forecast."""
+    if cv < CV_HIGH_CONFIDENCE_MAX:
+        return "\U0001F7E2 High confidence"
+    if cv < CV_MEDIUM_CONFIDENCE_MAX:
+        return "\U0001F7E1 Medium confidence"
+    return "\U0001F534 Low confidence"
+
 
 def build_recommendations(forecasts: pd.DataFrame,
                           features: pd.DataFrame,
@@ -75,7 +105,12 @@ def build_recommendations(forecasts: pd.DataFrame,
             "days_until_reorder_point": rec["days_until_reorder_point"],
             "weekly_revenue_at_risk": rec["effective_weekly_demand"] * r.unit_price,
         })
-    return pd.DataFrame(rows)
+    out = pd.DataFrame(rows)
+    out["urgency"] = [
+        urgency_tier(d, lt) for d, lt in zip(out["days_until_stockout"], out["lead_time_days"])
+    ]
+    out["confidence"] = out["cv"].apply(confidence_tier)
+    return out
 
 
 def plan_view(recommendations: pd.DataFrame, plan: str) -> pd.DataFrame:

@@ -64,6 +64,56 @@ def test_flagged_by_plans_labels_top_products(recs):
     assert labels[recs["StockCode"] == "D"].iloc[0] == ""
 
 
+class TestUrgencyTier:
+    """Urgency is relative to lead time: will the order arrive in time?"""
+
+    def test_critical_when_stockout_before_lead_time_elapses(self):
+        assert plans.urgency_tier(days_until_stockout=5, lead_time_days=7) == "\U0001F534 Critical"
+
+    def test_critical_at_exact_lead_time_boundary(self):
+        assert plans.urgency_tier(days_until_stockout=7, lead_time_days=7) == "\U0001F534 Critical"
+
+    def test_soon_when_within_two_lead_times(self):
+        assert plans.urgency_tier(days_until_stockout=10, lead_time_days=7) == "\U0001F7E1 Soon"
+
+    def test_monitor_when_comfortable_margin(self):
+        assert plans.urgency_tier(days_until_stockout=20, lead_time_days=7) == "\U0001F7E2 Monitor"
+
+    def test_shorter_lead_time_shrinks_the_critical_window(self):
+        # 5-day runway is Critical against a 7-day lead time, but comfortably
+        # past both the lead time and its 2x margin against a 2-day lead time
+        assert plans.urgency_tier(days_until_stockout=5, lead_time_days=2) == "\U0001F7E2 Monitor"
+
+
+class TestConfidenceTier:
+    def test_high_confidence_below_threshold(self):
+        assert plans.confidence_tier(0.5) == "\U0001F7E2 High confidence"
+
+    def test_medium_confidence_mid_range(self):
+        assert plans.confidence_tier(1.4) == "\U0001F7E1 Medium confidence"
+
+    def test_low_confidence_above_threshold(self):
+        assert plans.confidence_tier(2.5) == "\U0001F534 Low confidence"
+
+    def test_boundaries_are_exclusive_upward(self):
+        assert plans.confidence_tier(plans.CV_HIGH_CONFIDENCE_MAX) == "\U0001F7E1 Medium confidence"
+        assert plans.confidence_tier(plans.CV_MEDIUM_CONFIDENCE_MAX) == "\U0001F534 Low confidence"
+
+
+def test_build_recommendations_includes_urgency_and_confidence_tiers():
+    forecasts = pd.DataFrame([
+        {"StockCode": "A", "forecast": 20.0, "forecast_std": 5.0},
+    ])
+    features = pd.DataFrame([
+        {"StockCode": "A", "week_start": "2011-01-03", "description": "WIDGET",
+         "category_name": "WIDGETS", "unit_price": 2.5,
+         "coefficient_of_variation_weekly_demand_past_12_weeks": 0.3},
+    ])
+    out = plans.build_recommendations(forecasts, features, {"A": 5}, {}, buffer="safe")
+    assert out.loc[0, "confidence"] == "\U0001F7E2 High confidence"
+    assert out.loc[0, "urgency"] in {"\U0001F534 Critical", "\U0001F7E1 Soon", "\U0001F7E2 Monitor"}
+
+
 artifacts_missing = not (os.path.exists(MODEL_PATH) and os.path.exists(FEATURES_PATH))
 
 
