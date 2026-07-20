@@ -68,9 +68,16 @@ def recommend(current_stock: float,
 
     if current_stock <= rop:
         decision = "order_now"
-        # Order up to 4 weeks of forecasted demand (the forecast horizon),
-        # net of what we already have and what is already on order.
-        order_qty = max(0.0, FORECAST_HORIZON_WEEKS * demand - current_stock - on_order)
+        # Order enough to cover 4 weeks of forecasted demand (the forecast
+        # horizon), or enough to clear the reorder point - whichever is
+        # larger. When forecast uncertainty is high, the safety-stock term
+        # in the reorder point can exceed the raw 4-week demand coverage;
+        # without the second term the recommended quantity could land the
+        # owner back under their own reorder point.
+        net_of_on_order = current_stock + on_order
+        order_qty = max(0.0,
+                        FORECAST_HORIZON_WEEKS * demand - net_of_on_order,
+                        rop - net_of_on_order)
         order_qty = math.ceil(order_qty)
         days_until_reorder_point = None
     else:

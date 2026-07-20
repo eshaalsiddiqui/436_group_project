@@ -18,6 +18,7 @@ import math
 import pytest
 
 from src.reorder_logic import (
+    FORECAST_HORIZON_WEEKS,
     PROMOTION_UPLIFT,
     recommend,
     reorder_point,
@@ -87,6 +88,55 @@ class TestPromotionToggle:
         assert promo["decision"] == "order_now"
         # Order up to 4 weeks of uplifted demand: 4*26 - 30 = 74 units.
         assert promo["recommended_order_qty"] == 74
+
+
+class TestOrderQuantityClearsReorderPoint:
+    """When forecast uncertainty is high, the safety-stock term in the
+    reorder point can exceed 4 weeks of raw demand coverage. The recommended
+    order quantity must still bring stock to at least the reorder point -
+    otherwise the app is telling the owner to order and remain under their
+    own threshold, which is exactly what undermined trust in the demo.
+
+    Numbers below reproduce product 23843 (PAPER CRAFT, LITTLE BIRDIE) from
+    the live app: stock 489, reorder point 847, and a pre-fix recommendation
+    of 212 units (489 + 212 = 701 < 847). demand/std are back-calculated so
+    reorder_point() lands on exactly 847 and the pre-fix formula on exactly
+    212, reproducing the reported bug precisely before checking the fix.
+    """
+
+    STOCK = 489
+    DEMAND = 175.25
+    STD = 335.875
+    LEAD_TIME_DAYS = 7
+
+    def test_reorder_point_matches_reported_value(self):
+        rop = reorder_point(self.DEMAND, self.STD, self.LEAD_TIME_DAYS, z=z_for_buffer("safe"))
+        assert rop == pytest.approx(847.0, abs=0.01)
+
+    def test_old_four_week_only_formula_would_undershoot(self):
+        # Documents the bug: 4 weeks of demand alone doesn't reach the
+        # reorder point, which is exactly why (a) alone was insufficient.
+        four_week_only = FORECAST_HORIZON_WEEKS * self.DEMAND - self.STOCK
+        assert four_week_only == pytest.approx(212.0, abs=0.01)
+        rop = reorder_point(self.DEMAND, self.STD, self.LEAD_TIME_DAYS, z=z_for_buffer("safe"))
+        assert self.STOCK + four_week_only < rop
+
+    def test_recommended_order_brings_stock_to_or_above_reorder_point(self):
+        rec = recommend(self.STOCK, self.DEMAND, self.STD, self.LEAD_TIME_DAYS, buffer="safe")
+        assert rec["decision"] == "order_now"
+        assert rec["recommended_order_qty"] == 358
+        assert self.STOCK + rec["recommended_order_qty"] >= rec["reorder_point"]
+
+    @pytest.mark.parametrize("stock,demand,std,lead_time", [
+        (489, 175.25, 335.875, 7),   # high-uncertainty case from the bug report
+        (10, 20.0, 5.0, 7),          # low-uncertainty case, 4-week term dominates
+        (5, 50.0, 2.0, 3),           # short lead time, still order_now
+        (0, 1.0, 50.0, 14),          # near-zero demand, huge uncertainty
+    ])
+    def test_order_now_always_clears_reorder_point(self, stock, demand, std, lead_time):
+        rec = recommend(stock, demand, std, lead_time, buffer="safe")
+        if rec["decision"] == "order_now":
+            assert stock + rec["recommended_order_qty"] >= rec["reorder_point"]
 
 
 class TestEdgeCases:

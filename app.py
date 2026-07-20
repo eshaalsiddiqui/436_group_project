@@ -109,7 +109,7 @@ promotion = st.sidebar.toggle(
     help="Applies a 1.3x uplift to forecasted demand before all reorder math.")
 
 default_lead_time = st.sidebar.number_input(
-    "Default supplier lead time (days)", min_value=1, max_value=60, value=7)
+    "Supplier lead time (days)", min_value=1, max_value=60, value=7)
 
 forecasts, inventory = get_forecasts(inventory_size)
 names = (features.sort_values("week_start").groupby("StockCode")["description"].last())
@@ -210,10 +210,34 @@ with col1:
 
 with col2:
     st.subheader("Stock runway vs reorder point")
-    daily = sel_rec["forecast_weekly"] * uplift / 7.0
-    days = np.arange(0, FORECAST_HORIZON_WEEKS * 7 + 1)
-    projected = np.clip(sel_rec["current_stock"] - daily * days, 0, None)
+    # Piecewise depletion: each week drains at that week's own forecasted
+    # rate (spread evenly across its 7 days), matching the uneven bars in
+    # the forecast chart above rather than one flat average slope.
+    weekly_demand = sel_fc.sort_values("horizon")["forecast"].to_numpy() * uplift
     rop = sel_rec["reorder_point"]
+
+    days = [0]
+    projected = [sel_rec["current_stock"]]
+    stock = sel_rec["current_stock"]
+    for wd in weekly_demand:
+        daily_this_week = wd / 7.0
+        for _ in range(7):
+            stock = max(0.0, stock - daily_this_week)
+            days.append(days[-1] + 1)
+            projected.append(stock)
+    days = np.array(days)
+    projected = np.array(projected)
+
+    cross = None
+    if sel_rec["current_stock"] > rop:
+        stock = sel_rec["current_stock"]
+        for week_idx, wd in enumerate(weekly_demand):
+            daily_this_week = wd / 7.0
+            stock_after_week = stock - daily_this_week * 7
+            if daily_this_week > 0 and stock_after_week <= rop:
+                cross = week_idx * 7 + (stock - rop) / daily_this_week
+                break
+            stock = stock_after_week
 
     fig2 = go.Figure()
     fig2.add_trace(go.Scatter(
@@ -223,8 +247,7 @@ with col2:
     fig2.add_hline(y=rop, line=dict(color=C_CRITICAL, width=2, dash="dash"),
                    annotation_text=f"⚠ reorder point ({rop:.0f})",
                    annotation_font_color=C_CRITICAL)
-    if daily > 0 and sel_rec["current_stock"] > rop:
-        cross = (sel_rec["current_stock"] - rop) / daily
+    if cross is not None:
         fig2.add_trace(go.Scatter(
             x=[cross], y=[rop], mode="markers+text",
             marker=dict(color=C_CRITICAL, size=10),
