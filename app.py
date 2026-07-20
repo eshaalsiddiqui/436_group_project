@@ -186,11 +186,11 @@ with col1:
         height=320, margin=dict(l=10, r=10, t=10, b=10), showlegend=False,
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         yaxis=dict(title="units", gridcolor=C_GRID, zerolinecolor=C_GRID,
-                   tickfont=dict(color=C_MUTED)),
+                   tickfont=dict(color=C_MUTED), rangemode="nonnegative"),
         xaxis=dict(tickfont=dict(color=C_MUTED)))
     st.plotly_chart(fig)
-    st.caption("Error bars: ±1 std dev across the forest's individual trees"
-               + (" · uplift applied" if promotion else ""))
+    st.caption("Error bars: ±1 std dev across the forest's individual trees, clipped at 0 "
+               "(demand can't go negative)" + (" · uplift applied" if promotion else ""))
 
 # --------------------------------------------------------------------------
 # Main panel, middle: stock depletion vs reorder point
@@ -223,7 +223,7 @@ with col2:
         height=320, margin=dict(l=10, r=10, t=10, b=10), showlegend=False,
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         yaxis=dict(title="units on hand", gridcolor=C_GRID, zerolinecolor=C_GRID,
-                   tickfont=dict(color=C_MUTED)),
+                   tickfont=dict(color=C_MUTED), rangemode="nonnegative"),
         xaxis=dict(title="days from today", gridcolor=C_GRID,
                    tickfont=dict(color=C_MUTED)))
     st.plotly_chart(fig2)
