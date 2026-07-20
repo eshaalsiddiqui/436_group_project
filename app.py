@@ -116,6 +116,8 @@ names = (features.sort_values("week_start").groupby("StockCode")["description"].
 
 # Per-product stock and lead-time overrides, seeded with a demo heuristic.
 editor_key = f"stock_editor_{inventory_size}"
+default_lead_time_key = f"{editor_key}_default_lead_time"
+
 if editor_key not in st.session_state:
     seed_stock = default_stock_levels(inventory, forecasts)
     st.session_state[editor_key] = pd.DataFrame({
@@ -124,6 +126,16 @@ if editor_key not in st.session_state:
         "current_stock": [seed_stock[c] for c in inventory],
         "lead_time_days": [default_lead_time] * len(inventory),
     })
+    st.session_state[default_lead_time_key] = default_lead_time
+elif st.session_state[default_lead_time_key] != default_lead_time:
+    # Moving the slider cascades to every row still sitting at the old
+    # default; rows the owner has hand-edited to something else are left
+    # alone rather than silently overwritten.
+    table = st.session_state[editor_key]
+    at_old_default = table["lead_time_days"] == st.session_state[default_lead_time_key]
+    table.loc[at_old_default, "lead_time_days"] = default_lead_time
+    st.session_state[editor_key] = table
+    st.session_state[default_lead_time_key] = default_lead_time
 
 with st.sidebar.expander("Current stock & lead time per product"):
     st.caption("Demo stock counts are pre-filled - edit them to match your shelves.")
